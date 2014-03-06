@@ -1,35 +1,18 @@
 # STA 250 HW 3: CLASSIFICATION METHODS
 
-# NOTES
-# Focus on Reputation, actual post content, and post status
-# (which includes why it was closed if applicable)
-
-# METHODS
-# Boosting & Random Forests?
-
-# Using NLP
-
-# EX: x = String(train.sample$Title[1])
-# x now outputs: "what is the best way to connect my
-# application with kernel?"
-
-# Experimenting with rpart
-# define priors, work with rpart.control to inhibit pruning, etc.
-# alter/try out method variants
-
-# Needed to allow Java to access more memory
-options( java.parameters = "-Xmx4g" ) 
-
+# ********* INITIAL DATA PREP ***********
 # Import the training sample
 setwd("~/Google Drive/STA 250/HW3") # location of file (varies)
-train.sample <- read.csv("train-sample.csv",
-                  colClasses=c("numeric", "character", "numeric",
-                               "character", "numeric", "numeric",
-                               rep("character",9 )))
+train.sample <- read.csv("train-sample.csv")
 
+# Important libraries for tests
+library(adabag)
+library(randomForest)
+library(rpart)
+library(qdap)
 
-status = as.numeric(train.sample$OpenStatus)
 # Convert status into either OPEN or CLOSED
+status = as.numeric(train.sample$OpenStatus)
 for(i in 1:length(status))
 {
     if(status[i]==4){
@@ -40,9 +23,8 @@ for(i in 1:length(status))
 }
 train.sample$OpenStatus = status
 
-
+# Identifies all words used in the titles (qdap)
 titles = train.sample$Title
-# Identifies all words used in the titles
 aw.title = all_words(titles)
 
 # Sorts all word counts to find the most common ones
@@ -50,14 +32,15 @@ head(aw.title[with(aw.title,order(-FREQ)),],32)
 
 # Top Recurring Non-Stop Words: using, c, php, what,
 # java, file, android, jquery, code, data
+# Use to compose a wordlist
 wordlist = c('c','php','what','java','file','android',
              'jquery','code','data', 'get')
+
+
 
 # This code scans every title for the presence of the words
 # in wordlist, returning a TRUE or FALSE result for each.
 
-# This scans each title and records whether the words in
-# "wordlist" are present.
 # Ideally applied to all titles, but too computationally
 # intense to complete -- Computer freezes after ~50 min.
 word.tf = lapply(titles[1:10000],
@@ -74,47 +57,59 @@ train.mod = x[ , -which(names(x) %in% c("Title","BodyMarkdown"))]
 train.mod = train.mod[,c(1:6,12:23)]
 train.mod = train.mod[,-7]
 
-randomForest(OpenStatus~.,data=train.mod, ntree=3)
 
+
+# ************* CLASSIFICATION METHODS **************
+
+# Convert to a factor to use classification
 train.mod$OpenStatus = factor(train.mod$OpenStatus)
+
 
 # Arguments specified rather than doing OpenStatus~.
 # to avoid ambiguity
+
+# Random Forests
+rf.data = randomForest(OpenStatus~ReputationAtPostCreation +
+            OwnerUndeletedAnswerCountAtPostTime +
+            OwnerUserId + c + php + what + java +
+            file + android + jquery + code + data + get,
+            data=train.mod, ntree=100, do.trace=10)
+
+# NOTE: A barplot is not ideal, but it does easily allow
+# variable names to fit and be compared
+par(mar = c(4,14,4,2)) # Positioning
+barplot(sort(rf.data$importance, decreasing = TRUE),
+        main = "Mean Gini Decrease (Random Forests)",
+        horiz = TRUE, las = 1,
+        names.arg=(names(train.mod[,-c(1,2,4,7)])))
+
+# Boosting
 boost.data = boosting(OpenStatus~ReputationAtPostCreation +
          OwnerUndeletedAnswerCountAtPostTime +
          OwnerUserId + c + php + what + java +
          file + android + jquery + code + data + get,
          data=train.mod,
          control=rpart.control(maxdepth=5,cp=0.001),
-         mfinal = 20)
+         mfinal = 30)
 
-test = rpart(OpenStatus ~ ., data = train.mod, method = "anova",
-             minsplit = 5)
+# Importance of variables according to boosting algorithm
+barplot(sort(boost.data$importance, decreasing = TRUE),
+        main = "Relative Importance of Variables (Boosting)",
+        horiz = TRUE, las = 1, xlim = c(0, 65))
 
-test = rpart(OpenStatus ~ ReputationAtPostCreation +
-                 OwnerUndeletedAnswerCountAtPostTime +
-                 OwnerUserId + c + php + what + java +
-                 file + android + jquery + code + data + get,
-             data = train.mod,
-             method = "anova", minsplit=10)
-# ***** END TEST AREA *****
-
-
-test = rpart(OpenStatus ~ ReputationAtPostCreation +
-                 OwnerUndeletedAnswerCountAtPostTime +
-                 OwnerUserId, data = train.sample,
-             method = "anova", minsplit=5)
+test = rpart(OpenStatus~ReputationAtPostCreation +
+                   OwnerUndeletedAnswerCountAtPostTime +
+                   OwnerUserId + c + php + what + java +
+                   file + android + jquery + code + data + get,
+               data=train.mod, method='class',
+               control=rpart.control(maxdepth=5,cp=0.001))
 par(xpd=NA)
 plot(test)
-text(test, use.n=TRUE, all=TRUE)
+text(test, use.n=TRUE)
 
-test = randomForest(OpenStatus ~ ReputationAtPostCreation +
-                    OwnerUndeletedAnswerCountAtPostTime +
-                    OwnerUserId, data = train.sample,
-                    ntree = 30)
+# ********** FORMER NLP ATTEMPTS ***********
 
-
-# Always use before rJava
+# Always use before rJava to increase memory accessible
 options(java.parameters = "-Xmx4g")
 
 titles = train.sample$Title
@@ -123,12 +118,12 @@ sent_ann = Maxent_Sent_Token_Annotator()
 sents = annotate(str,sent_ann)
 word_ann = Maxent_Word_Token_Annotator()
 
+# The word annotator failed to produce results
+# after nearly 30 minutes, and caused R to hang
+# as well
 words = annotate(str, word_ann, sents)
 
-pos_ann = Maxent_POS_Tag_Annotator()
-pos = annotate(str, pos_ann, words) 
-i = pos$type == 'word'
-ww = str[pos][i]
-cbind(ww, unlist(pos$features[i]))
-
-?Maxent_Word_Token_Annotator
+# From here we could proceed to parts of speech
+# annotation, and would compare the presence of
+# each word in both the title and the Body Markdown
+# rather than just a select few
