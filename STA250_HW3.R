@@ -20,7 +20,8 @@
 # Needed to allow Java to access more memory
 options( java.parameters = "-Xmx4g" ) 
 
-setwd("~/Google Drive/STA 250/HW3")
+# Import the training sample
+setwd("~/Google Drive/STA 250/HW3") # location of file (varies)
 train.sample <- read.csv("train-sample.csv",
                   colClasses=c("numeric", "character", "numeric",
                                "character", "numeric", "numeric",
@@ -32,60 +33,60 @@ status = as.numeric(train.sample$OpenStatus)
 for(i in 1:length(status))
 {
     if(status[i]==4){
-        status[i] = 1
+        status[i] = 1 # OPEN
     }else{
-        status[i] = 0
+        status[i] = 0 # CLOSED
     }
 }
 train.sample$OpenStatus = status
 
-# Bag O Words test
-# test.t = train.sample$BodyMarkdown[1:1000]
-#words.bm = bag_o_words(test.t)
-
-
 
 titles = train.sample$Title
-words.title = bag_o_words(titles) # Takes about 1 minute
-
+# Identifies all words used in the titles
 aw.title = all_words(titles)
 
 # Sorts all word counts to find the most common ones
 head(aw.title[with(aw.title,order(-FREQ)),],32)
 
-# Top Recurring Words: using, c, php, what, java, file,
-# android, jquery, code, data
+# Top Recurring Non-Stop Words: using, c, php, what,
+# java, file, android, jquery, code, data
 wordlist = c('c','php','what','java','file','android',
              'jquery','code','data', 'get')
 
-start = proc.time()
 # This code scans every title for the presence of the words
 # in wordlist, returning a TRUE or FALSE result for each.
-word.tf = lapply(titles, FUN=function(x) wordlist %in% all_words(x)$WORD)
-time = proc.time() - start
 
-word.df = word.df = as.data.frame(do.call(rbind,word.tf))
-names(word.df)=wordlist
-new.train = cbind(train.sample,word.df)
-
-
-# ***** START TEST AREA *****
-start = proc.time()
-word.tf = lapply(titles[1:10000], FUN=function(x) wordlist %in% all_words(x)$WORD)
-time = proc.time() - start
+# This scans each title and records whether the words in
+# "wordlist" are present.
+# Ideally applied to all titles, but too computationally
+# intense to complete -- Computer freezes after ~50 min.
+word.tf = lapply(titles[1:10000],
+                 FUN=function(x) wordlist %in% all_words(x)$WORD)
 
 # Turns the word results into a data frame
 word.df = as.data.frame(do.call(rbind,word.tf))
 names(word.df)=wordlist
 
+# Combines with original data set & simplifies for use
+# in randomForest
 x = cbind(train.sample[1:10000,],word.df)
 train.mod = x[ , -which(names(x) %in% c("Title","BodyMarkdown"))]
-
-(wordlist %in% all_words(titles)$WORD)
-
 train.mod = train.mod[,c(1:6,12:23)]
+train.mod = train.mod[,-7]
 
 randomForest(OpenStatus~.,data=train.mod, ntree=3)
+
+train.mod$OpenStatus = factor(train.mod$OpenStatus)
+
+# Arguments specified rather than doing OpenStatus~.
+# to avoid ambiguity
+boost.data = boosting(OpenStatus~ReputationAtPostCreation +
+         OwnerUndeletedAnswerCountAtPostTime +
+         OwnerUserId + c + php + what + java +
+         file + android + jquery + code + data + get,
+         data=train.mod,
+         control=rpart.control(maxdepth=5,cp=0.001),
+         mfinal = 20)
 
 test = rpart(OpenStatus ~ ., data = train.mod, method = "anova",
              minsplit = 5)
