@@ -36,11 +36,8 @@ head(aw.title[with(aw.title,order(-FREQ)),],32)
 wordlist = c('c','php','what','java','file','android',
              'jquery','code','data', 'get')
 
-
-
 # This code scans every title for the presence of the words
 # in wordlist, returning a TRUE or FALSE result for each.
-
 # Ideally applied to all titles, but too computationally
 # intense to complete -- Computer freezes after ~50 min.
 word.tf = lapply(titles[1:10000],
@@ -57,16 +54,24 @@ train.mod = x[ , -which(names(x) %in% c("Title","BodyMarkdown"))]
 train.mod = train.mod[,c(1:6,12:23)]
 train.mod = train.mod[,-7]
 
-
-
 # ************* CLASSIFICATION METHODS **************
 
 # Convert to a factor to use classification
 train.mod$OpenStatus = factor(train.mod$OpenStatus)
 
-
 # Arguments specified rather than doing OpenStatus~.
 # to avoid ambiguity
+
+# Sample Classification Tree
+test = rpart(OpenStatus~ReputationAtPostCreation +
+                 OwnerUndeletedAnswerCountAtPostTime +
+                 OwnerUserId + c + php + what + java +
+                 file + android + jquery + code + data + get,
+             data=train.mod, method='class',
+             control=rpart.control(maxdepth=5,cp=0.001))
+par(xpd=NA)
+plot(test)
+text(test, use.n=TRUE)
 
 # Random Forests
 rf.data = randomForest(OpenStatus~ReputationAtPostCreation +
@@ -97,18 +102,7 @@ barplot(sort(boost.data$importance, decreasing = TRUE),
         main = "Relative Importance of Variables (Boosting)",
         horiz = TRUE, las = 1, xlim = c(0, 65))
 
-test = rpart(OpenStatus~ReputationAtPostCreation +
-                   OwnerUndeletedAnswerCountAtPostTime +
-                   OwnerUserId + c + php + what + java +
-                   file + android + jquery + code + data + get,
-               data=train.mod, method='class',
-               control=rpart.control(maxdepth=5,cp=0.001))
-par(xpd=NA)
-plot(test)
-text(test, use.n=TRUE)
-
 # ********** FORMER NLP ATTEMPTS ***********
-
 # Always use before rJava to increase memory accessible
 options(java.parameters = "-Xmx4g")
 
@@ -123,7 +117,6 @@ word_ann = Maxent_Word_Token_Annotator()
 # as well
 words = annotate(str, word_ann, sents)
 
-# From here we could proceed to parts of speech
-# annotation, and would compare the presence of
-# each word in both the title and the Body Markdown
-# rather than just a select few
+# From here we could proceed to parts of speech annotation
+# and would compare the presence of each word in both the
+# title and the Body Markdown rather than just a select few
